@@ -1,0 +1,177 @@
+
+
+libname lib "/home/u62629012/sasuser.v94/Homework";
+
+/* libname SDTM "C:\Mentors\Olena\Share Files\SDTM"; */
+/* libname raw "C:\Mentors\Olena\Share Files\Rawdata"; */
+
+title "Domain Abbreviation: DM - demographics";
+
+
+
+proc sort data=lib.DEMOG out=lib.demog2 (keep = STUDYID SITEID SUBJID VISITDT GENDER BIRTHDT MAJRRACE) nodupkey;
+	by _ALL_;
+run;
+
+proc sort data=lib.DEMOG2 out=lib.DEMOG_sorted;
+	by SUBJID;
+run;
+
+data lib.DEMOG1 (drop=TEMP);
+	set lib.DEMOG_sorted  (rename=(STUDYID=temp SITEID=SITEID1 SUBJID=SUBJID1));
+	by SUBJID1; 
+	
+	attrib
+		STUDYID  label= "Study Identifier"                  length=$13
+		SUBJID   label= "Subject Identifier for the Study"  length=$6
+		SITEID   label= "Study Site Identifier" 			length=$3
+		USUBJID  label= "Unique Subject Identifier" 		length=$24
+		BRTHDTC  label= "Date/Time of Birth"  				length=$19
+		SEX      label= "Sex" 								length=$1
+		RACE     label= "Race"								length=$41
+		ETHNIC   label= "Ethnicity" 			    		length=$22
+		DMDTC    label= "Date/Time of Collection" 			length=$19
+	;
+		
+	if not missing(temp) then STUDYID=strip(temp);
+	if not missing(SITEID1)  then SITEID=strip(put(SITEID1, best.));
+	if not missing(SUBJID1)  then SUBJID=strip(put(SUBJID1, z6.));
+	USUBJID = catx("-", temp, SITEID1, SUBJID1);
+	BRTHDTC=strip(put(BIRTHDT, e8601da.));
+	If GENDER = 1 then SEX = 'M';
+	If GENDER = 2 then SEX = 'F';
+	if MAJRRACE = 3 then RACE = 'BLACK OR AFRICAN AMERICAN';
+	if MAJRRACE = 3 then ETHNIC = 'NOT HISPANIC OR LATINO';
+	if not missing(VISITDT) then DMDTC = put(VISITDT, e8601da.);  
+run;
+
+
+
+proc sort data=lib.endtrial out=lib.endtrial_sorted;
+	by SUBJID;
+run;
+	
+data lib.endtrial1 (drop=LASTVSDT); 
+	set lib.endtrial_sorted (rename=(SUBJID=SUBJID1 SITEID=SITEID1)) ;
+	by SUBJID1; 
+	
+	attrib
+		RFICDTC  label= "Date/Time of Informed Consent" 	 length=$19
+		RFENDTC  label= "Subject Reference End Date/Time"    length=$19  
+		RFPENDTC label= "Date/Time of End of Participation"  length=$19
+	;
+	if not missing(LASTVSDT) then RFENDTC=strip(put(LASTVSDT, e8601da.));
+	if not missing(LASTVSDT) then RFPENDTC=strip(put(LASTVSDT, e8601da.));
+	RFICDTC = "  ";
+	SUBJID=strip(put(SUBJID1, 6.));
+	SITEID=put(SITEID1, 3.);
+run;
+
+
+
+proc sort data=lib.invagt out=lib.invagt_sorted;
+	by SUBJID SITEID DAYDATE TIMEADM;
+run;
+
+data lib.RFXSTDTC;
+	set lib.invagt_sorted (rename=(SUBJID=SUBJID1 SITEID=SITEID1));
+	by SUBJID1 SITEID1 DAYDATE TIMEADM;
+	attrib
+		RFXSTDTC label= "Date/Time of First Study Treatment" length=$19 
+	;
+	If first.subjid1;
+	RFXSTDTC = catx("T", put(DAYDATE, e8601da.), TIMEADM);
+	SITEID=put(SITEID1, 3.);
+	SUBJID=strip(put(SUBJID1, 6.));
+run;
+
+data lib.RFXENDTC;
+	set lib.invagt_sorted (rename=(SUBJID=SUBJID1 SITEID=SITEID1));
+	by SUBJID1 SITEID1 DAYDATE TIMEADM;
+	attrib
+		RFXENDTC label= "Date/Time of Last Study Treatment"  length=$19
+	;
+	If last.subjid1;
+	RFXENDTC = catx("T", put(DAYDATE, e8601da.), TIMEADM);
+	SITEID=put(SITEID1, 3.);
+	SUBJID=strip(put(SUBJID1, 6.));
+run;
+
+
+
+proc sort data=lib.rdmcode out=lib.rdmcode_sorted;
+	by SUBJID;
+run;
+
+data lib.rdmcode1;
+	set lib.rdmcode_sorted (rename=(SUBJID=SUBJID1 SITEID=SITE1));
+	by SUBJID1; 
+	
+	attrib
+		RFSTDTC  label= "Subject Reference Start Date/Time" length=$19
+		ARMCD    label= "Planned Arm Code"				    length=$8
+		ARM      label= "Description of Planned Arm"	    length=$200
+		
+	;
+	if not missing(DATERANDOMIZED) then RFSTDTC=strip(put(DATERANDOMIZED, e8601da.));
+	if not missing(TRTMT) then ARMCD = TRTMT;
+	if not missing(XTRTMT) then ARM = XTRTMT;
+	
+	SITEID=put(SITEID1, best.);
+	SUBJID=strip(put(SUBJID1, best.));
+run;
+
+data lib.death1;
+	set lib.death (rename=(SUBJID=SUBJID1 SITEID=SITEID1));
+	by SUBJID1;
+	
+	attrib
+		
+		SUBJID   label= "Subject Identifier for the Study"  length=$6
+		DTHDTC   label= "Date/Time of Death" 				length=$19
+		DTHFL    label= "Subject Death Flag" 				length=$1
+	;
+
+	DTHDTC = strip(put(DEATHDT, e8601da.));
+	if not missing(DTHDTC) then DTHFL="Y";
+	SITEID=put(SITEID1, best.);
+	SUBJID=strip(put(SUBJID1, best.));
+run;
+
+
+
+data lib.DM_Lialiuk;
+	merge lib.death1 lib.invagt1 lib.RFXENDTC  lib.RFXSTDTC lib.endtrial1 lib.rdmcode1 lib.DEMOG1;
+	by SUBJID1;
+	attrib
+		ACTARM   label= "Description of Actual Arm" 	    length=$200
+		ACTARMCD label= "Actual Arm Code" 			 	    length=$8
+		AGE      label= "Age"   							length=8
+		DMDY     label= "Study Day of Collection" 			length=8 format=e8601da.
+		DOMAIN   label= "Domain Abbreviation"  			 	length=$2
+		AGEU     label= "Age Units" 					    length=$5
+		COUNTRY  label= "Country"  							length=$3
+	;
+	AGE = floor((input(RFSTDTC, e8601da.) - input(BRTHDTC, e8601da.) + 1)/ 365.25);
+	
+	if not missing(DAYDATE) then ACTARM = ARM;
+	else if not missing(ARM) then ACTARM = 'Not Treated';
+	else ACTARM = 'Not Assigned';
+	
+	if ACTARM =  'Not Treated' then ACTARMCD = 'NOTTRT';
+	else if ACTARM = 'Not Assigned' then ACTARMCD = 'NOTASSGN';
+	else ACTARMCD = ARMCD;
+	
+	if DMDTC le RFSTDTC then DMDY = input(DMDTC,e8601da.) - input(RFSTDTC, e8601da.);
+	else if DMDTC gt RFSTDTC then DMDY = input(DMDTC,e8601da.) - input(RFSTDTC, e8601da.) + 1;
+
+	COUNTRY = "UNK";
+	DOMAIN = "DM";
+	AGEU = "YEARS";
+run;
+
+proc sort data=lib.DM_Lialiuk (keep = STUDYID DOMAIN USUBJID SUBJID RFSTDTC RFENDTC RFXSTDTC RFXENDTC RFICDTC RFPENDTC DTHDTC
+	DTHFL SITEID BRTHDTC AGE AGEU SEX RACE ETHNIC ARMCD ARM ACTARM ACTARMCD COUNTRY DMDTC DMDY) out=lib.DM_OL	  nodupkey;
+	by _ALL_;
+run; 
+
